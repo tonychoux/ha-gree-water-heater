@@ -1,46 +1,33 @@
+"""Gree water heater sensors.
+
+字段映射来自用户机型（格力+ App GR_Code）实际回报的字段：
+- 可用热水量  <- Watpercent（原始值 -100，如 200 -> 100%）
+- 运行状态    <- Wstate（0=保温中, 1=正在加热）
+- 整机故障    <- AllErr（0=正常, 非0=故障码）
+
+所有值读取自主实体的 _acOptions 字典（由设备响应自带的 cols/dat 配对得到）。
+"""
+
 import asyncio
-from homeassistant.components.sensor import SensorEntity
+import logging
+
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+
+_LOGGER = logging.getLogger(__name__)
 
 
-def _tank_temperature_raws(water_heater):
-    """返回 (上, 中, 下) 三段水温的原始值（含 +100 偏移）。
+class _GreeBaseSensor(SensorEntity):
+    """公共基类：提供唯一 id、设备信息、可用性。"""
 
-    部分格力热水器型号不回报 WsenTmpH/M/L 三个分段水温字段，
-    此时用设备回报的当前水温 WatTmp 作为近似填充，避免传感器一直显示未知。
-    支持分段水温的设备仍使用其真实值。
-    """
-    opts = water_heater._acOptions if hasattr(water_heater, "_acOptions") else {}
-    wat = opts.get("WatTmp")
-    tH = opts.get("WsenTmpH")
-    tM = opts.get("WsenTmpM")
-    tL = opts.get("WsenTmpL")
-    if None in (tH, tM, tL) and wat is not None:
-        tH = tH if tH is not None else wat
-        tM = tM if tM is not None else wat
-        tL = tL if tL is not None else wat
-    return tH, tM, tL
-
-
-class GreeWaterHeaterSensor(SensorEntity):
-    def __init__(self, water_heater, sensor_type, name, unit):
+    def __init__(self, water_heater, sensor_type, name, unit=None):
         self._water_heater = water_heater
         self._sensor_type = sensor_type
         mac = getattr(water_heater, "_mac_addr", "")
         mac_str = "".join([c for c in mac if c.isalnum()])
         self._attr_unique_id = f"gree_{mac_str}_re_shui_qi_{sensor_type.lower()}"
-        self._attr_name = name  # 直接用中文名
-        self._attr_native_unit_of_measurement = unit
-
-    @property
-    def native_value(self):
-        if self._sensor_type in ("WsenTmpH", "WsenTmpM", "WsenTmpL"):
-            tH, tM, tL = _tank_temperature_raws(self._water_heater)
-            value = {"WsenTmpH": tH, "WsenTmpM": tM, "WsenTmpL": tL}[self._sensor_type]
-        else:
-            value = self._water_heater._acOptions.get(self._sensor_type)
-        if value is not None:
-            return (value - 100)
-        return None
+        self._attr_name = name
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
 
     @property
     def available(self):
@@ -50,156 +37,77 @@ class GreeWaterHeaterSensor(SensorEntity):
     def device_info(self):
         return self._water_heater.device_info
 
-#热水百分比
-class GreeWaterHotPercentSensor(SensorEntity):
+
+class GreeHotWaterAmountSensor(_GreeBaseSensor):
+    """可用热水量百分比（Watpercent - 100）。"""
+
     def __init__(self, water_heater):
-        self._water_heater = water_heater
-        mac = getattr(water_heater, "_mac_addr", "")
-        mac_str = "".join([c for c in mac if c.isalnum()])
-        self._attr_unique_id = f"gree_{mac_str}_re_shui_qi_hot_percent"
-        self._attr_name = "实际热水占比"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_device_class = "percentage"
-        self._attr_state_class = "measurement"
+        super().__init__(water_heater, "Watpercent", "可用热水量", "%")
+        # HA 无合法的 percentage device_class，用 % 单位 + measurement 状态类。
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self):
-        try:
-            tH, tM, tL = _tank_temperature_raws(self._water_heater)
-            set_tmp = self._water_heater._acOptions.get('WsetTmp')  # 设定温度（原始*10）
-            if None in (tH, tM, tL, set_tmp):
-                return None
-
-            # 设备原始温度有偏移
-            tH -= 100
-            tM -= 100
-            tL -= 100
-            set_temp = set_tmp / 10  # 设定温度
-
-            # 判断线
-            threshold = 41
-            if set_temp < 41:
-                threshold = set_temp
-
-            tank_temps = [
-                tH,
-                (tH + tM) / 2,
-                tM,
-                (tM + tL) / 2,
-                tL
-            ]
-            hot_count = sum(1 for t in tank_temps if t >= threshold)
-            percent = hot_count * 20
-            return percent
-        except Exception as e:
-            import logging; logging.error(f"计算热水占比出错: {e}")
+        value = self._water_heater._acOptions.get("Watpercent")
+        if value is None:
             return None
+        return value - 100
 
-    @property
-    def available(self):
-        return self._water_heater.available
 
-    @property
-    def device_info(self):
-        return self._water_heater.device_info
-        
-    
-    
-#目标热水占比
-class GreeWaterTargetHotPercentSensor(SensorEntity):
-    """目标热水占比传感器"""
+class GreeRunningStateSensor(_GreeBaseSensor):
+    """当前运行状态（Wstate: 0=保温中, 1=正在加热）。"""
+
+    _STATES = {0: "保温中", 1: "正在加热"}
+
     def __init__(self, water_heater):
-        self._water_heater = water_heater
-        mac = getattr(water_heater, "_mac_addr", "")
-        mac_str = "".join([c for c in mac if c.isalnum()])
-        self._attr_unique_id = f"gree_{mac_str}_re_shui_qi_target_hot_percent"
-        self._attr_name = "目标热水占比"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_device_class = "percentage"
+        super().__init__(water_heater, "Wstate", "运行状态")
 
     @property
     def native_value(self):
-        try:
-            tH, tM, tL = _tank_temperature_raws(self._water_heater)
-            set_tmp = self._water_heater._acOptions.get('WsetTmp')  # 设定温度（原始*10）
-            if None in (tH, tM, tL, set_tmp):
-                return None
-
-            # 设备原始温度有偏移
-            tH -= 100
-            tM -= 100
-            tL -= 100
-            set_temp = set_tmp / 10  # 设定温度
-
-            # 水箱温度
-            tank_temps = [
-                tH,
-                (tH + tM) / 2,
-                tM,
-                (tM + tL) / 2,
-                tL
-            ]
-            total_capacity = 200
-            tank_capacity = total_capacity / 5
-
-            hot_water = 0.0
-
-            if set_temp <= 41:
-                # 目标温度≤41时，达标的水箱直接算满，未达为0
-                for temp in tank_temps:
-                    if temp >= set_temp:
-                        hot_water += tank_capacity
-                percent = int(round(hot_water / total_capacity * 100))
-                return percent
-            else:
-                # 目标温度>41时，采用线性权重
-                for temp in tank_temps:
-                    if temp < 41:
-                        continue  # 低于41度不计入
-                    if temp >= set_temp:
-                        weight = 1
-                    else:
-                        weight = (temp - 41) / (set_temp - 41)
-                        weight = min(max(weight, 0), 1)
-                    hot_water += tank_capacity * weight
-                percent = int(round(hot_water / total_capacity * 100))
-                return percent
-
-        except Exception as e:
-            import logging; logging.error(f"计算目标热水占比出错: {e}")
+        value = self._water_heater._acOptions.get("Wstate")
+        if value is None:
             return None
+        return self._STATES.get(value, f"未知({value})")
+
+
+class GreeFaultSensor(_GreeBaseSensor):
+    """整机综合故障码（AllErr: 0=正常）。"""
+
+    def __init__(self, water_heater):
+        super().__init__(water_heater, "AllErr", "整机故障")
 
     @property
-    def available(self):
-        return self._water_heater.available
+    def native_value(self):
+        value = self._water_heater._acOptions.get("AllErr")
+        if value is None:
+            return None
+        return "正常" if value == 0 else f"故障({value})"
 
-    @property
-    def device_info(self):
-        return self._water_heater.device_info
-        
-        
+
 async def async_setup_entry(hass, entry, async_add_entities):
-    # 不要等待太久，最多等2秒
+    # 主实体可能还在首次同步中，最多等 2 秒。
     for _ in range(10):
         water_heater = hass.data["gree_water_heater_entities"].get(entry.entry_id)
         if water_heater:
             break
         await asyncio.sleep(0.2)
     else:
-        import logging
-        logging.error(f"gree_water_heater sensor async_setup_entry error: water_heater entity not found for entry_id {entry.entry_id}")
+        _LOGGER.error(
+            "gree_water_heater sensor async_setup_entry: "
+            "water_heater entity not found for entry_id %s",
+            entry.entry_id,
+        )
         return
 
-    sensors = [
-        GreeWaterHotPercentSensor(water_heater),
-        GreeWaterTargetHotPercentSensor(water_heater),
-        GreeWaterHeaterSensor(water_heater, 'WsenTmpH', '热水器高温值', '°C'),
-        GreeWaterHeaterSensor(water_heater, 'WsenTmpM', '热水器中温值', '°C'),
-        GreeWaterHeaterSensor(water_heater, 'WsenTmpL', '热水器低温值', '°C'),
-    ]
-    async_add_entities(sensors, True)
+    async_add_entities(
+        [
+            GreeHotWaterAmountSensor(water_heater),
+            GreeRunningStateSensor(water_heater),
+            GreeFaultSensor(water_heater),
+        ],
+        True,
+    )
+
 
 async def async_unload_entry(hass, entry):
-    await hass.config_entries.async_unload_platforms(entry, ["water_heater", "sensor"])
-    hass.data.get("gree_water_heater_entities", {}).pop(entry.entry_id, None)
     return True

@@ -46,6 +46,24 @@ CONF_DISABLE_AVAILABLE_CHECK  = 'disable_available_check'
 CONF_ENCRYPTION_VERSION = 'encryption_version'
 CONF_TARGET_TEMP = 'target_temp'
 HVAC_MODES = ["heat_pump", "eco", "high_demand", "off"]
+
+# 用户机型（格力+ App GR_Code）真实字段全集。设备只回它认识的字段，
+# 按响应自带 cols 与 dat 配对，未返回的字段保持 None。
+ALL_FIELDS = [
+    "Pow", "AllErr", "Wmod", "SetTemInt", "SetTemDec",
+    "WstpSv", "WstpH", "WstpM", "WstpL", "WatTmp", "Watpercent",
+    "TemUn", "SwhBw", "BwBoard", "BwErr", "AppTimer", "Wstate", "WschTyp",
+    "Sch1", "Sch2",
+    "Wtmr1StartHr", "Wtmr1StartMin", "Wtmr1EndHr", "Wtmr1EndMin",
+    "Wtmr2StartHr", "Wtmr2StartMin", "Wtmr2EndHr", "Wtmr2EndMin",
+    "host", "name",
+]
+# 可写字段（下发 cmd）。只读字段不下发，避免设备拒绝。
+WRITABLE_FIELDS = [
+    "Pow", "Wmod", "SetTemInt", "WschTyp", "Sch1", "Sch2",
+    "Wtmr1StartHr", "Wtmr1StartMin", "Wtmr1EndHr", "Wtmr1EndMin",
+    "Wtmr2StartHr", "Wtmr2StartMin", "Wtmr2EndHr", "Wtmr2EndMin",
+]
 CONF_TEMP_SENSOR = 'temp_sensor'
 CONF_TARGET_TEMP_STEP = 'target_temp_step'
 
@@ -136,7 +154,6 @@ class GreeWaterHeater(WaterHeaterEntity):
 
         self._unit_of_measurement = '°C'
         self._temp_sensor_entity_id = temp_sensor_entity_id
-        self._has_temp_sensor = None
         self._target_temperature_step = target_temp_step
 
 
@@ -157,8 +174,8 @@ class GreeWaterHeater(WaterHeaterEntity):
         else:
             self._uid = 0
 
-        self._acOptions = { 'Pow': None, 'Wmod': None, 'WsetTmp': None, 'WatTmp': None, 'WstpSv': None, 'WstpH': None, 'Werr': None, 'WschOn': None, 'WschOff': None, 'WschOffMin': None, 'WschOnMin': None, 'Wtmr1': None, 'Wtmr2': None, 'Wtmr3': None, 'Wtmr1Min': None, 'Wtmr2Min': None, 'Wtmr3Min': None, 'WsenTmpH': None, 'WsenTmpM': None, 'WsenTmpL': None }
-        self._optionsToFetch = ["Pow", "Wmod", "WsetTmp", "WatTmp", "WstpSv", "WstpH", "Werr", "WschOn", "WschOff", "WschOffMin", "WschOnMin", "Wtmr1", "Wtmr2", "Wtmr3", "Wtmr1Min", "Wtmr2Min", "Wtmr3Min", "WsenTmpH", "WsenTmpM", "WsenTmpL"]
+        self._acOptions = {key: None for key in ALL_FIELDS}
+        self._optionsToFetch = list(ALL_FIELDS)
 
 
 
@@ -276,46 +293,16 @@ class GreeWaterHeater(WaterHeaterEntity):
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
             cipher = self.GetGCMCipher(self._encryption_key)
         response = self.FetchResult(cipher, self._ip_addr, self._port, self._timeout, jsonPayloadToSend)
-        # 临时诊断：打印设备响应结构（字段名 cols + 值 dat），确认机型支持的字段，抓完日志后删除以下四行
-        _LOGGER.debug("Device status response keys: %s", list(response.keys()))
-        _LOGGER.debug("Device status response cols: %s", response.get("cols"))
-        _LOGGER.debug("Device status response dat: %s", response.get("dat"))
-        _LOGGER.debug("Device status response raw: %s", response)
-
-        # === 临时宽字段探测（抓完日志后删除整个 if 块，恢复正常状态读取）===
-        # 用用户从格力+ App 提取的本机真实字段清单 + host/name 一次性请求，
-        # 设备只回它认识的字段，返回的 cols 即该机型真实支持的字段。
-        if getattr(self, "_probe_count", 0) < 5:
-            self._probe_count = getattr(self, "_probe_count", 0) + 1
-            probe_cols = [
-                "Pow", "AllErr", "Wmod", "SetTemInt", "SetTemDec", "WstpSv", "WstpH",
-                "WatTmp", "Watpercent", "TemUn", "SwhBw", "BwBoard", "BwErr", "AppTimer",
-                "Wstate", "WschTyp", "Sch1", "Sch2",
-                "Wtmr1StartHr", "Wtmr1StartMin", "Wtmr1EndHr", "Wtmr1EndMin",
-                "Wtmr2StartHr", "Wtmr2StartMin", "Wtmr2EndHr", "Wtmr2EndMin",
-                "host", "name",
-            ]
-            try:
-                probe_plaintext = '{"cols":' + simplejson.dumps(probe_cols) + ',"mac":"' + str(self._mac_addr) + '","t":"status"}'
-                if self.encryption_version == 1:
-                    probe_cipher = self.CIPHER
-                    probe_payload = '{"cid":"app","i":0,"pack":"' + base64.b64encode(probe_cipher.encrypt(self.Pad(probe_plaintext).encode("utf8"))).decode('utf-8') + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + '}'
-                else:
-                    pack, tag = self.EncryptGCM(self._encryption_key, probe_plaintext)
-                    probe_cipher = self.GetGCMCipher(self._encryption_key)
-                    probe_payload = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
-                probe_response = self.FetchResult(probe_cipher, self._ip_addr, self._port, self._timeout, probe_payload)
-                returned_cols = probe_response.get("cols") or []
-                _LOGGER.debug("Field probe requested: %s", probe_cols)
-                _LOGGER.debug("Field probe returned cols: %s", returned_cols)
-                _LOGGER.debug("Field probe returned dat: %s", probe_response.get("dat"))
-                _LOGGER.debug("Field probe returned raw: %s", probe_response)
-                _LOGGER.debug("Field probe MISSING: %s", [c for c in probe_cols if c not in returned_cols])
-            except Exception as probe_err:
-                _LOGGER.debug("Field probe error: %s", probe_err)
-        # === 临时宽字段探测结束 ===
-
-        return response['dat']
+        # 按设备响应自带的 cols/dat 配对，而不是按我们请求的字段顺序猜。
+        # 不同机型返回的字段集合和顺序都可能不同，cols 才是字段名的事实来源。
+        cols = response.get("cols")
+        dat = response.get("dat")
+        if not cols or dat is None:
+            _LOGGER.warning("Device status response missing cols/dat: %s", response)
+            return {}
+        result = dict(zip(cols, dat))
+        _LOGGER.debug("Device status parsed fields: %s", result)
+        return result
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride = None):
         if not (optionValuesToOverride is None):
@@ -347,11 +334,16 @@ class GreeWaterHeater(WaterHeaterEntity):
         return acOptions
 
     def SendStateToAc(self, timeout):
-        opt = '"Pow","Wmod","WsetTmp","WatTmp","WstpSv","WstpH","WschOn","WschOff","WschOnMin","WschOffMin","Wtmr1","Wtmr2","Wtmr3","Wtmr1Min","Wtmr2Min","Wtmr3Min","WsenTmpH","WsenTmpM","WsenTmpL"'
-        p = '{Pow},{Wmod},{WsetTmp},{WatTmp},{WstpSv},{WstpH},{WschOn},{WschOff},{WschOnMin},{WschOffMin},{Wtmr1},{Wtmr2},{Wtmr3},{Wtmr1Min},{Wtmr2Min},{Wtmr3Min},{WsenTmpH},{WsenTmpM},{WsenTmpL}'.format(**self._acOptions)
-
+        # 只下发有值且可写的字段；未读到（None）的字段不下发，避免设备误判。
+        fields = [k for k in WRITABLE_FIELDS if self._acOptions.get(k) is not None]
+        if not fields:
+            _LOGGER.warning("No writable fields available; skip sending state to AC")
+            return
+        opt = ",".join('"%s"' % k for k in fields)
+        p = ",".join(str(self._acOptions[k]) for k in fields)
 
         statePackJson = '{"opt":[' + opt + '],"p":[' + p + '],"t":"cmd"}'
+        _LOGGER.debug("Sending state to AC: %s", statePackJson)
         if self.encryption_version == 1:
             cipher = self.CIPHER
             sentJsonPayload = '{"cid":"app","i":0,"pack":"' + base64.b64encode(cipher.encrypt(self.Pad(statePackJson).encode("utf8"))).decode('utf-8') + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + '}'
@@ -363,20 +355,18 @@ class GreeWaterHeater(WaterHeaterEntity):
         _LOGGER.info('Done sending state to HVAC: ' + str(receivedJsonPayload))
 
     def UpdateHATargetTemperature(self):
-
-        self._target_temperature = self._acOptions['WsetTmp']/10
-        _LOGGER.info(self._target_temperature)
+        # SetTemInt 是设定温度的直接值（如 50 = 50°C），无 +100 偏移、无需 ÷10。
+        set_tem = self._acOptions.get('SetTemInt')
+        if set_tem is None:
+            return
+        self._target_temperature = float(set_tem)
         if self._target_temp_entity_id:
-            _LOGGER.info(self._target_temp_entity_id)
             target_temp_state = self.hass.states.get(self._target_temp_entity_id)
-            _LOGGER.info(target_temp_state)
             if target_temp_state:
-                _LOGGER.info('5')
                 attr = target_temp_state.attributes
-                _LOGGER.info(attr)
                 if MIN_TEMP <= self._target_temperature <= MAX_TEMP:
                     self.hass.states.async_set(self._target_temp_entity_id, float(self._target_temperature), attr)
-        _LOGGER.info('HA target temp set according to HVAC state to: ' + str(self._acOptions['WsetTmp']))
+        _LOGGER.info('HA target temperature set from SetTemInt: %s', self._target_temperature)
 
 
 
@@ -395,10 +385,11 @@ class GreeWaterHeater(WaterHeaterEntity):
 
     def UpdateHACurrentTemperature(self):
         if not self._temp_sensor_entity_id:
-            if self._has_temp_sensor:
-                temp = self._acOptions['WatTmp'] if self._acOptions['WatTmp'] <= TEMP_OFFSET else self._acOptions['WatTmp'] - TEMP_OFFSET
+            wat = self._acOptions.get('WatTmp')
+            if wat is not None:
+                temp = wat - TEMP_OFFSET if wat > TEMP_OFFSET else wat
                 self._current_temperature = self.hass.config.units.temperature(float(temp), self._unit_of_measurement)
-                _LOGGER.info('HA current temperature set with device built-in temperature sensor state : ' + str(self._current_temperature))
+                _LOGGER.info('HA current temperature set from WatTmp: %s', self._current_temperature)
 
     def UpdateHAStateToCurrentACState(self):
         self.UpdateHATargetTemperature()
@@ -408,24 +399,6 @@ class GreeWaterHeater(WaterHeaterEntity):
     def SyncState(self, acOptions = {}):
         #Fetch current settings from HVAC
         _LOGGER.info('Starting SyncState')
-
-        if not self._temp_sensor_entity_id:
-            if self._has_temp_sensor is None:
-                _LOGGER.info('Attempt to check whether device has an built-in temperature sensor')
-                try:
-                    temp_sensor = self.GreeGetValues(["WatTmp"])
-                except (OSError, ValueError) as err:
-                    _LOGGER.info("Could not determine built-in temp sensor (retry next update): %s", err)
-                else:
-                    if temp_sensor:
-                        self._has_temp_sensor = True
-                        self._acOptions.update({'WatTmp': None})
-                        self._optionsToFetch.append("WatTmp")
-                        _LOGGER.info('Device has an built-in temperature sensor')
-                    else:
-                        self._has_temp_sensor = False
-                        _LOGGER.info('Device has no built-in temperature sensor')
-
 
         optionsToFetch = self._optionsToFetch
 
@@ -524,7 +497,7 @@ class GreeWaterHeater(WaterHeaterEntity):
         s = int(float(state.state))
         _LOGGER.info('Updating HVAC with changed target_temp_entity state | ' + str(s))
         if (s >= MIN_TEMP) and (s <= MAX_TEMP):
-            self.SyncState({'WsetTmp': s*10})
+            self.SyncState({'SetTemInt': s})
             return
         _LOGGER.error('Unable to update from target_temp_entity!')
 
@@ -633,26 +606,8 @@ class GreeWaterHeater(WaterHeaterEntity):
         """Return the optional device state attributes."""
         data = {
             "target_temp_step": self._target_temperature_step,
-            "电源状态 (Pow)": self._acOptions.get('Pow'),
-            "工作模式 (Wmod)": self._acOptions.get('Wmod'),
-            "设定水温 (WsetTmp)": self._acOptions.get('WsetTmp'),
-            "当前水温 (WatTmp)": self._acOptions.get('WatTmp'),
-            "传感器高温值 (WsenTmpH)": self._acOptions.get('WsenTmpH'),
-            "传感器中温值 (WsenTmpM)": self._acOptions.get('WsenTmpM'),
-            "传感器低温值 (WsenTmpL)": self._acOptions.get('WsenTmpL'),
-            "预约开始时间 (WstpSv)": self._format_time(self._acOptions.get('WstpSv')),
-            "预约加热时长 (WstpH)": self._format_time(self._acOptions.get('WstpH')),
-            "错误代码 (Werr)": self._acOptions.get('Werr'),
-            "预约开启时间 (WschOn)": self._format_time(self._acOptions.get('WschOn')),
-            "预约关闭时间 (WschOff)": self._format_time(self._acOptions.get('WschOff')),
-            "预约关闭分钟数 (WschOffMin)": self._format_time(self._acOptions.get('WschOffMin')),
-            "预约开启分钟数 (WschOnMin)": self._format_time(self._acOptions.get('WschOnMin')),
-            "定时器1 (Wtmr1)": self._acOptions.get('Wtmr1'),
-            "定时器2 (Wtmr2)": self._acOptions.get('Wtmr2'),
-            "定时器3 (Wtmr3)": self._acOptions.get('Wtmr3'),
-            "定时器1时长 (Wtmr1Min)": self._acOptions.get('Wtmr1Min'),
-            "定时器2时长 (Wtmr2Min)": self._acOptions.get('Wtmr2Min'),
-            "定时器3时长 (Wtmr3Min)": self._acOptions.get('Wtmr3Min'),
+            "温度单位 (TemUn)": "摄氏" if self._acOptions.get('TemUn') == 0 else "华氏",
+            "设备名 (name)": self._acOptions.get('name'),
         }
         return data
 
@@ -667,11 +622,12 @@ class GreeWaterHeater(WaterHeaterEntity):
         _LOGGER.info('set_temperature(): ' + str(kwargs.get(ATTR_TEMPERATURE)))
         # Set new target temperatures.
         if kwargs.get(ATTR_TEMPERATURE) is not None:
-            # do nothing if temperature is none
+            # do nothing if HVAC is switched off
             if not (self._acOptions['Pow'] == 0):
-                # do nothing if HVAC is switched off
-                _LOGGER.info('SyncState with WsetTmp=' + str(kwargs.get(ATTR_TEMPERATURE)))
-                self.SyncState({ 'WsetTmp': int(kwargs.get(ATTR_TEMPERATURE))*10})
+                # SetTemInt 是直接值（如 50 = 50°C），不再 ×10。
+                temp = int(kwargs.get(ATTR_TEMPERATURE))
+                _LOGGER.info('SyncState with SetTemInt=%s', temp)
+                self.SyncState({ 'SetTemInt': temp })
                 self.schedule_update_ha_state()
 
     def set_operation_mode(self, hvac_mode) -> None:
