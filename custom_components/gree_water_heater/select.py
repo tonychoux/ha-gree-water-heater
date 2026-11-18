@@ -9,6 +9,9 @@ import asyncio
 import logging
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+
+from . import refresh_signal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,12 +23,20 @@ class _GreeTimerModeSelect(SelectEntity):
 
     _attr_options = MODE_OPTIONS
 
-    def __init__(self, water_heater):
+    def __init__(self, water_heater, entry_id):
         self._water_heater = water_heater
+        self._entry_id = entry_id
         mac = getattr(water_heater, "_mac_addr", "")
         mac_str = "".join([c for c in mac if c.isalnum()])
         self._attr_unique_id = f"gree_{mac_str}_timer_mode"
         self._attr_name = "定时模式"
+
+    async def async_added_to_hass(self):
+        self.async_on_unload(
+            async_dispatcher_connect(
+                self.hass, refresh_signal(self._entry_id), self.async_write_ha_state
+            )
+        )
 
     @property
     def available(self):
@@ -51,6 +62,8 @@ class _GreeTimerModeSelect(SelectEntity):
         await self.hass.async_add_executor_job(
             self._water_heater.SyncState, {"WschTyp": mode}
         )
+        # 通知时间实体按新模式重算 available（定时用水 → 结束时间隐藏）
+        async_dispatcher_send(self.hass, refresh_signal(self._entry_id))
         self.async_write_ha_state()
 
 
@@ -68,7 +81,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         )
         return
 
-    async_add_entities([_GreeTimerModeSelect(water_heater)], True)
+    async_add_entities([_GreeTimerModeSelect(water_heater, entry.entry_id)], True)
 
 
 async def async_unload_entry(hass, entry):

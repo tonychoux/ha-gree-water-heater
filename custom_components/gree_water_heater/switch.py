@@ -10,6 +10,9 @@ import asyncio
 import logging
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+from . import refresh_signal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,9 +20,10 @@ _LOGGER = logging.getLogger(__name__)
 class _GreeTimerSwitch(SwitchEntity):
     """定时组开关基类。"""
 
-    def __init__(self, water_heater, field, name):
+    def __init__(self, water_heater, field, name, entry_id):
         self._water_heater = water_heater
         self._field = field  # 'Sch1' / 'Sch2'
+        self._entry_id = entry_id
         mac = getattr(water_heater, "_mac_addr", "")
         mac_str = "".join([c for c in mac if c.isalnum()])
         self._attr_unique_id = f"gree_{mac_str}_timer_{field.lower()}"
@@ -38,13 +42,22 @@ class _GreeTimerSwitch(SwitchEntity):
         value = self._water_heater._acOptions.get(self._field)
         return value == 1
 
-    def turn_on(self, **kwargs):
-        self._water_heater.SyncState({self._field: 1})
+    async def async_turn_on(self, **kwargs):
+        await self.hass.async_add_executor_job(
+            self._water_heater.SyncState, {self._field: 1}
+        )
         self._water_heater.schedule_update_ha_state()
+        # 通知该组时间实体按新开关状态重算 available
+        async_dispatcher_send(self.hass, refresh_signal(self._entry_id))
+        self.async_write_ha_state()
 
-    def turn_off(self, **kwargs):
-        self._water_heater.SyncState({self._field: 0})
+    async def async_turn_off(self, **kwargs):
+        await self.hass.async_add_executor_job(
+            self._water_heater.SyncState, {self._field: 0}
+        )
         self._water_heater.schedule_update_ha_state()
+        async_dispatcher_send(self.hass, refresh_signal(self._entry_id))
+        self.async_write_ha_state()
 
     def _fmt_hhmm(self, hr_key, min_key):
         opts = self._water_heater._acOptions
@@ -90,8 +103,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(
         [
-            _GreeTimerSwitch(water_heater, "Sch1", "定时组1开关"),
-            _GreeTimerSwitch(water_heater, "Sch2", "定时组2开关"),
+            _GreeTimerSwitch(water_heater, "Sch1", "定时组1开关", entry.entry_id),
+            _GreeTimerSwitch(water_heater, "Sch2", "定时组2开关", entry.entry_id),
         ],
         True,
     )
