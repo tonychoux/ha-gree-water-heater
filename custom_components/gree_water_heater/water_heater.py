@@ -275,11 +275,13 @@ class GreeWaterHeater(WaterHeaterEntity):
             pack, tag = self.EncryptGCM(self._encryption_key, plaintext)
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
             cipher = self.GetGCMCipher(self._encryption_key)
-        received = self.FetchResult(cipher, self._ip_addr, self._port, self._timeout, jsonPayloadToSend)['dat']
-        # 临时诊断：打印请求字段与设备回传的原始值，确认后删除以下两行
-        _LOGGER.debug("Requested status fields: %s", propertyNames)
-        _LOGGER.debug("Device returned status: %s", received)
-        return received
+        response = self.FetchResult(cipher, self._ip_addr, self._port, self._timeout, jsonPayloadToSend)
+        # 临时诊断：打印设备响应结构（字段名 cols + 值 dat），确认机型支持的字段，抓完日志后删除以下四行
+        _LOGGER.debug("Device status response keys: %s", list(response.keys()))
+        _LOGGER.debug("Device status response cols: %s", response.get("cols"))
+        _LOGGER.debug("Device status response dat: %s", response.get("dat"))
+        _LOGGER.debug("Device status response raw: %s", response)
+        return response['dat']
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride = None):
         if not (optionValuesToOverride is None):
