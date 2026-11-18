@@ -2,8 +2,8 @@
 
 Home Assistant 自定义集成，用于控制 Gree 空气能热水器，支持温度调节、模式切换、传感器数据监控及热水量计算。
 
-**项目修改自** [jamelu001/gree_water_heater](https://github.com/jamelu001/gree_water_heater)
-
+**项目来自** [cybaijie/ha-gree-water-heater](https://github.com/cybaijie/ha-gree-water-heater)
+才疏学浅，Fork之后的修来都是来自AI
 ---
 
 ## ✨ 功能特性
