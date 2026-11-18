@@ -276,9 +276,9 @@ class GreeWaterHeater(WaterHeaterEntity):
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
             cipher = self.GetGCMCipher(self._encryption_key)
         received = self.FetchResult(cipher, self._ip_addr, self._port, self._timeout, jsonPayloadToSend)['dat']
-        # [TEMP-DEBUG] 临时诊断：打印请求字段与设备回传的原始值，抓完日志后删除这两行
-        _LOGGER.info('[TEMP-DEBUG] requested cols: %s', propertyNames)
-        _LOGGER.info('[TEMP-DEBUG] device returned dat: %s', received)
+        # 临时诊断：打印请求字段与设备回传的原始值，确认后删除以下两行
+        _LOGGER.debug("Requested status fields: %s", propertyNames)
+        _LOGGER.debug("Device returned status: %s", received)
         return received
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride = None):
