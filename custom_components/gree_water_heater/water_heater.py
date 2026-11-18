@@ -281,6 +281,40 @@ class GreeWaterHeater(WaterHeaterEntity):
         _LOGGER.debug("Device status response cols: %s", response.get("cols"))
         _LOGGER.debug("Device status response dat: %s", response.get("dat"))
         _LOGGER.debug("Device status response raw: %s", response)
+
+        # === 临时宽字段探测（抓完日志后删除整个 if 块，恢复正常状态读取）===
+        # 用用户从格力+ App 提取的本机真实字段清单 + host/name 一次性请求，
+        # 设备只回它认识的字段，返回的 cols 即该机型真实支持的字段。
+        if getattr(self, "_probe_count", 0) < 5:
+            self._probe_count = getattr(self, "_probe_count", 0) + 1
+            probe_cols = [
+                "Pow", "AllErr", "Wmod", "SetTemInt", "SetTemDec", "WstpSv", "WstpH",
+                "WatTmp", "Watpercent", "TemUn", "SwhBw", "BwBoard", "BwErr", "AppTimer",
+                "Wstate", "WschTyp", "Sch1", "Sch2",
+                "Wtmr1StartHr", "Wtmr1StartMin", "Wtmr1EndHr", "Wtmr1EndMin",
+                "Wtmr2StartHr", "Wtmr2StartMin", "Wtmr2EndHr", "Wtmr2EndMin",
+                "host", "name",
+            ]
+            try:
+                probe_plaintext = '{"cols":' + simplejson.dumps(probe_cols) + ',"mac":"' + str(self._mac_addr) + '","t":"status"}'
+                if self.encryption_version == 1:
+                    probe_cipher = self.CIPHER
+                    probe_payload = '{"cid":"app","i":0,"pack":"' + base64.b64encode(probe_cipher.encrypt(self.Pad(probe_plaintext).encode("utf8"))).decode('utf-8') + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + '}'
+                else:
+                    pack, tag = self.EncryptGCM(self._encryption_key, probe_plaintext)
+                    probe_cipher = self.GetGCMCipher(self._encryption_key)
+                    probe_payload = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
+                probe_response = self.FetchResult(probe_cipher, self._ip_addr, self._port, self._timeout, probe_payload)
+                returned_cols = probe_response.get("cols") or []
+                _LOGGER.debug("Field probe requested: %s", probe_cols)
+                _LOGGER.debug("Field probe returned cols: %s", returned_cols)
+                _LOGGER.debug("Field probe returned dat: %s", probe_response.get("dat"))
+                _LOGGER.debug("Field probe returned raw: %s", probe_response)
+                _LOGGER.debug("Field probe MISSING: %s", [c for c in probe_cols if c not in returned_cols])
+            except Exception as probe_err:
+                _LOGGER.debug("Field probe error: %s", probe_err)
+        # === 临时宽字段探测结束 ===
+
         return response['dat']
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride = None):
