@@ -41,7 +41,7 @@ class _GreeTimerTime(TimeEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         # 模式/组开关变化后立即重算 available，无需等轮询
-        self.async_on_unload(
+        self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, refresh_signal(self._entry_id), self.async_write_ha_state
             )

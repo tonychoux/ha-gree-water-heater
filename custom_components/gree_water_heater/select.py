@@ -34,7 +34,7 @@ class _GreeTimerModeSelect(SelectEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self.async_on_unload(
+        self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, refresh_signal(self._entry_id), self.async_write_ha_state
             )
