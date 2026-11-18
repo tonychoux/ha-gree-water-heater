@@ -5,7 +5,8 @@ import base64
 
 import logging
 from functools import partial as ft
-from . import DOMAIN
+from . import DOMAIN, refresh_signal
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.components.water_heater import WaterHeaterEntity, WaterHeaterEntityFeature
 from homeassistant.const import (
 	#Platform,
@@ -115,6 +116,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # 再添加实体
     async_add_entities([water_heater])
     # 首次同步放到后台
+    water_heater._entry_id = entry.entry_id
     hass.async_create_task(water_heater.async_first_sync())
 
 
@@ -194,6 +196,10 @@ class GreeWaterHeater(WaterHeaterEntity):
         await self.hass.async_add_executor_job(self.update)
         # 需要时可调用 self.async_write_ha_state() 更新界面
         self.async_write_ha_state()
+        # 首次同步完成后，通知子实体重算 available（添加时主实体可能尚未 online）
+        entry_id = getattr(self, "_entry_id", None)
+        if entry_id:
+            async_dispatcher_send(self.hass, refresh_signal(entry_id))
 
     @property
     def device_info(self):
