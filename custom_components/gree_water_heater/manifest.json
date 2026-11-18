@@ -1,7 +1,7 @@
 {
   "domain": "gree_water_heater",
   "name": "Gree Water Heater",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "requirements": ["pycryptodome"],
   "codeowners": ["@tonychoux"],
   "config_flow": true,
