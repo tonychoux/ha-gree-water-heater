@@ -1,23 +1,21 @@
 # HA Gree Water Heater
 
-Home Assistant 自定义集成，用于控制 Gree 空气能热水器，支持温度调节、模式切换、传感器数据监控及热水量计算。
+本地控制格力（Gree）空气能热水器。支持开关、模式、水温调节、定时预约与状态监测。
 
+型号ID为910001空气能热水器测做试。
 
-**项目来自** [cybaijie/ha-gree-water-heater](https://github.com/cybaijie/ha-gree-water-heater)
-
-才疏学浅，Fork之后的修改都来自AI
+才疏学浅，Fork 之后的修改都来自 AI。
 
 ---
 
 ## ✨ 功能特性
 
-- 🌡️ **温度控制**：35-55°C 精准目标温度调节
-- 🔄 **多模式支持**：加热 / 节能 / 高需 / 关闭四种模式
-- 🌡️ **多点测温**：高/中/低三位置水温传感器
-- 💧 **智能计算**：实时热水量百分比（目标/实际）
-- ⏰ **预约定时**：支持定时开关机设置
-- 📱 **UI配置**：全图形化配置流程，无需编辑YAML
-- 🏠 **设备集成**：自动识别并在Home Assistant设备面板显示
+- 🔄 **运行模式**：标准 / 节能 / 快速 三种模式
+- 🌡️ **水温控制**：35–55°C 目标温度调节
+- 💧 **可用热水量**：热水量百分比
+- 📟 **状态监测**：运行状态（保温中 / 正在加热）
+- ⏰ **定时预约**：定时开关 + 可调整的开始 / 结束时间 
+- 📱 **图形化配置**：全程 UI 配置，无需编辑 YAML
 
 ---
 
@@ -30,7 +28,7 @@ Home Assistant 自定义集成，用于控制 Gree 空气能热水器，支持�
 3. 输入仓库地址：`https://github.com/tonychoux/ha-gree-water-heater`
 4. 类别选择 **Integration**
 5. 在 HACS 中搜索 **Gree Water Heater** 并安装
-6. 重启 Home Assistant
+6. 重启 Home Assistant > 若 HACS 更新报 domain 相关错误，先删除 HA 配置目录下残留的旧 `custom_components/greeWat/`
 
 ### 方法二：手动安装
 
@@ -49,91 +47,82 @@ mv ha-gree-water-heater/custom_components/gree_water_heater ./
 
 ## ⚙️ 配置
 
-### 图形化配置
-
 1. 进入 **设置 → 设备与服务**
 2. 点击 **添加集成**
 3. 搜索 **Gree Water Heater**
 4. 填写设备信息：
-   - **名称**：自定义显示名称
-   - **主机 IP**：热水器设备IP地址
-   - **端口**：默认 7000
-   - **MAC 地址**：设备MAC（无需冒号分隔）
-   - **加密版本**：根据设备型号选 1 或 2
-   - **超时时间**：默认 10 秒
+
+| 配置项    | 说明            | 默认值                |
+| ------ | ------------- | ------------------ |
+| 名称     | 集成显示名称        | `Gree WaterHeater` |
+| 主机 IP  | 热水器 IP 地址     | 必填                 |
+| 端口     | 设备 UDP 端口     | `7000`             |
+| MAC 地址 | 设备 MAC（无冒号分隔） | 必填                 |
+| 加密版本   | 按设备型号选择 1 或 2 | `1`                |
+| 超时时间   | 请求超时（秒）       | `10`               |
+
+> 修改设备 IP / MAC / 加密方式等，可在集成条目里通过「选项」重新配置。
 
 ---
 
 ## 📊 实体说明
 
-集成会自动创建以下实体：
+集成会自动创建以下实体（均归属同一台设备，唯一 ID 基于设备 MAC）：
 
-| 实体类型 | 名称 | 说明 |
-|----------|------|------|
-| `water_heater` | Gree Water Heater | 主控制实体 |
-| `sensor` | 热水器高温值 | 顶部温度传感器 |
-| `sensor` | 热水器中温值 | 中部温度传感器 |
-| `sensor` | 热水器低温值 | 底部温度传感器 |
-| `sensor` | 实际热水占比 | 当前可用热水百分比 |
-| `sensor` | 目标热水占比 | 达到目标温度的热水量 |
-<img width="532" height="537" alt="image" src="https://github.com/user-attachments/assets/e31d197a-8900-47bc-bd26-45ba3e4f7e40" />
-<img width="618" height="527" alt="image" src="https://github.com/user-attachments/assets/84498efa-5abf-42ea-89f0-6227d9e8cdef" />
+### 主控制实体 `water_heater`
 
----
+| 能力   | 对应字段        | 说明                                                      |
+| ---- | ----------- | ------------------------------------------------------- |
+| 开关   | `Pow`       | 开机 / 关机                                                 |
+| 运行模式 | `Wmod`      | `heat_pump` 标准 / `eco` 节能 / `high_demand` 快速 / `off` 关闭 |
+| 当前水温 | `WatTmp`    |                                                         |
+| 目标水温 | `SetTemInt` |                                                         |
 
-## 🔍 故障排除
+主实体还带有「温度单位」「设备名」等状态属性。
 
-### 问题1：无法连接设备
-**现象**：日志显示 `Could not connect with device`
+### 传感器 `sensor`
 
-**解决**：
-1. 确认设备IP地址正确且可ping通
-2. 检查热水器是否开启并接入同一局域网
-3. 尝试修改加密版本（1或2）
-4. 在热水器面板确认已启用网络功能
+| 实体    | 对应字段         | 说明              |
+| ----- | ------------ | --------------- |
+| 可用热水量 | `Watpercent` |                 |
+| 运行状态  | `Wstate`     | `保温中` / `正在加热`  |
+| 整机故障  | `AllErr`     | `正常` 或 `故障(代码)` |
 
-### 问题2：认证失败
-**现象**：日志显示 `Error getting device encryption key`
+### 定时开关 `switch`
 
-**解决**：
-1. 确认MAC地址格式正确（无冒号，小写）
-2. 尝试重置热水器网络设置
-3. 检查路由器防火墙是否阻止UDP端口7000
+| 实体     | 对应字段   | 说明           |
+| ------ | ------ | ------------ |
+| 定时组1开关 | `Sch1` | 开启 / 关闭定时组 1 |
+| 定时组2开关 | `Sch2` | 开启 / 关闭定时组 2 |
 
-### 问题3：数据不更新
-**现象**：传感器状态长时间不变
+### 定时时间 `time`
 
-**解决**：
-1. 检查 `SCAN_INTERVAL` 设置（默认60秒）
-2. 查看热水器是否处于关机状态
-3. 检查日志是否有 `device offline` 提示
+| 实体      | 对应字段                             |
+| ------- | -------------------------------- |
+| 定时1开始时间 | `Wtmr1StartHr` + `Wtmr1StartMin` |
+| 定时1结束时间 | `Wtmr1EndHr` + `Wtmr1EndMin`     |
+| 定时2开始时间 | `Wtmr2StartHr` + `Wtmr2StartMin` |
+| 定时2结束时间 | `Wtmr2EndHr` + `Wtmr2EndMin`     |
 
----
+### 定时模式 `select`
 
-## 📋 更新日志
+| 实体   | 对应字段      | 选项                    |
+| ---- | --------- | --------------------- |
+| 定时模式 | `WschTyp` | `定时开关`(0) / `定时用水`(1) |
 
-### v1.0.0
-- 初始版本（基于 jamelu001/gree_water_heater）
+### 时间实体的可用性规则
+
+为避免展示不生效的时间，以下情况对应时间实体会显示为「不可用」：
+
+- 定时组开关关闭（`Sch`=0）→ 该组开始 / 结束时间不可用
+- 定时模式为「定时用水」（`WschTyp`=1）→ 两个结束时间不可用（该模式下设备忽略结束时间）
+
+> 集成层面只能置灰为「不可用」。若要从界面彻底移除某实体，请在 **设置 → 设备与服务 → 实体** 中手动禁用它。
 
 ---
 
 ## 🙏 致谢
 
-- **原作者**：[@RobHofmann](https://github.com/RobHofmann/HomeAssistant-GreeClimateComponent) 的 HomeAssistant-GreeClimateComponent 项目
-- **原作者**：[@jamelu001](https://github.com/jamelu001/gree_water_heater?tab=readme-ov-file) 的 Gree Water Heater 项目
-- **加密实现**：pycryptodome 库
-- **协议分析**：Gree 设备社区研究者
+- **项目来自** [cybaijie/ha-gree-water-heater](https://github.com/cybaijie/ha-gree-water-heater)
 
 ---
-
-## 🔗 链接
-
-- **GitHub 仓库**: https://github.com/tonychoux/ha-gree-water-heater
-- **问题反馈**: https://github.com/tonychoux/ha-gree-water-heater/issues
-- **Home Assistant 社区**: https://community.home-assistant.io
-
----
-
-## 💡 贡献
-
-欢迎提交 Issue 和 Pull Request！
