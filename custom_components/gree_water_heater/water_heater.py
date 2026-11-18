@@ -93,7 +93,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
     # 先存到 hass.data
-    hass.data.setdefault("greeWat_entities", {})[entry.entry_id] = water_heater
+    hass.data.setdefault("gree_water_heater_entities", {})[entry.entry_id] = water_heater
     # 再添加实体
     async_add_entities([water_heater])
     # 首次同步放到后台

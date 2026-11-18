@@ -1,8 +1,8 @@
-DOMAIN = "greeWat"
+DOMAIN = "gree_water_heater"
 
 async def async_setup_entry(hass, entry):
     # 保证数据结构一定存在
-    hass.data.setdefault("greeWat_entities", {})
+    hass.data.setdefault("gree_water_heater_entities", {})
     await hass.config_entries.async_forward_entry_setups(entry, ["water_heater", "sensor"])
     return True
 

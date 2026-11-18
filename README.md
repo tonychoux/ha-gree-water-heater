@@ -27,7 +27,7 @@ Home Assistant 自定义集成，用于控制 Gree 空气能热水器，支持�
 
 1. 打开 HACS → **自定义仓库**
 2. 点击 **添加自定义仓库**
-3. 输入仓库地址：`https://github.com/cybaijie/ha-gree-water-heater`
+3. 输入仓库地址：`https://github.com/tonychoux/ha-gree-water-heater`
 4. 类别选择 **Integration**
 5. 在 HACS 中搜索 **Gree Water Heater** 并安装
 6. 重启 Home Assistant
@@ -39,8 +39,8 @@ Home Assistant 自定义集成，用于控制 Gree 空气能热水器，支持�
 cd /config/custom_components
 
 # 2. 下载集成
-git clone https://github.com/cybaijie/ha-gree-water-heater.git
-mv ha-gree-water-heater/custom_components/greeWat ./
+git clone https://github.com/tonychoux/ha-gree-water-heater.git
+mv ha-gree-water-heater/custom_components/gree_water_heater ./
 
 # 3. 重启 Home Assistant
 ```
@@ -128,8 +128,8 @@ mv ha-gree-water-heater/custom_components/greeWat ./
 
 ## 🔗 链接
 
-- **GitHub 仓库**: https://github.com/cybaijie/ha-gree-water-heater
-- **问题反馈**: https://github.com/cybaijie/ha-gree-water-heater/issues
+- **GitHub 仓库**: https://github.com/tonychoux/ha-gree-water-heater
+- **问题反馈**: https://github.com/tonychoux/ha-gree-water-heater/issues
 - **Home Assistant 社区**: https://community.home-assistant.io
 
 ---

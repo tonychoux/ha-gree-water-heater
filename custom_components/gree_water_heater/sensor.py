@@ -181,13 +181,13 @@ class GreeWaterTargetHotPercentSensor(SensorEntity):
 async def async_setup_entry(hass, entry, async_add_entities):
     # 不要等待太久，最多等2秒
     for _ in range(10):
-        water_heater = hass.data["greeWat_entities"].get(entry.entry_id)
+        water_heater = hass.data["gree_water_heater_entities"].get(entry.entry_id)
         if water_heater:
             break
         await asyncio.sleep(0.2)
     else:
         import logging
-        logging.error(f"greeWat sensor async_setup_entry error: water_heater entity not found for entry_id {entry.entry_id}")
+        logging.error(f"gree_water_heater sensor async_setup_entry error: water_heater entity not found for entry_id {entry.entry_id}")
         return
 
     sensors = [
@@ -201,5 +201,5 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 async def async_unload_entry(hass, entry):
     await hass.config_entries.async_unload_platforms(entry, ["water_heater", "sensor"])
-    hass.data.get("greeWat_entities", {}).pop(entry.entry_id, None)
+    hass.data.get("gree_water_heater_entities", {}).pop(entry.entry_id, None)
     return True

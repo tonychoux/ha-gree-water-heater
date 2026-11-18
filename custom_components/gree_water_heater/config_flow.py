@@ -1,7 +1,7 @@
 from homeassistant import config_entries
 import voluptuous as vol
 
-class GreeWatConfigFlow(config_entries.ConfigFlow, domain="greeWat"):
+class GreeWatConfigFlow(config_entries.ConfigFlow, domain="gree_water_heater"):
     async def async_step_user(self, user_input=None):
         errors = {}
         if user_input is not None:
