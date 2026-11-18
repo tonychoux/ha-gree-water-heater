@@ -1,6 +1,26 @@
 import asyncio
 from homeassistant.components.sensor import SensorEntity
 
+
+def _tank_temperature_raws(water_heater):
+    """返回 (上, 中, 下) 三段水温的原始值（含 +100 偏移）。
+
+    部分格力热水器型号不回报 WsenTmpH/M/L 三个分段水温字段，
+    此时用设备回报的当前水温 WatTmp 作为近似填充，避免传感器一直显示未知。
+    支持分段水温的设备仍使用其真实值。
+    """
+    opts = water_heater._acOptions if hasattr(water_heater, "_acOptions") else {}
+    wat = opts.get("WatTmp")
+    tH = opts.get("WsenTmpH")
+    tM = opts.get("WsenTmpM")
+    tL = opts.get("WsenTmpL")
+    if None in (tH, tM, tL) and wat is not None:
+        tH = tH if tH is not None else wat
+        tM = tM if tM is not None else wat
+        tL = tL if tL is not None else wat
+    return tH, tM, tL
+
+
 class GreeWaterHeaterSensor(SensorEntity):
     def __init__(self, water_heater, sensor_type, name, unit):
         self._water_heater = water_heater
@@ -12,8 +32,12 @@ class GreeWaterHeaterSensor(SensorEntity):
         self._attr_native_unit_of_measurement = unit
 
     @property
-    def state(self):
-        value = self._water_heater._acOptions.get(self._sensor_type)
+    def native_value(self):
+        if self._sensor_type in ("WsenTmpH", "WsenTmpM", "WsenTmpL"):
+            tH, tM, tL = _tank_temperature_raws(self._water_heater)
+            value = {"WsenTmpH": tH, "WsenTmpM": tM, "WsenTmpL": tL}[self._sensor_type]
+        else:
+            value = self._water_heater._acOptions.get(self._sensor_type)
         if value is not None:
             return (value - 100)
         return None
@@ -39,11 +63,9 @@ class GreeWaterHotPercentSensor(SensorEntity):
         self._attr_state_class = "measurement"
 
     @property
-    def state(self):
+    def native_value(self):
         try:
-            tH = self._water_heater._acOptions.get('WsenTmpH')
-            tM = self._water_heater._acOptions.get('WsenTmpM')
-            tL = self._water_heater._acOptions.get('WsenTmpL')
+            tH, tM, tL = _tank_temperature_raws(self._water_heater)
             set_tmp = self._water_heater._acOptions.get('WsetTmp')  # 设定温度（原始*10）
             if None in (tH, tM, tL, set_tmp):
                 return None
@@ -96,11 +118,9 @@ class GreeWaterTargetHotPercentSensor(SensorEntity):
         self._attr_device_class = "percentage"
 
     @property
-    def state(self):
+    def native_value(self):
         try:
-            tH = self._water_heater._acOptions.get('WsenTmpH')
-            tM = self._water_heater._acOptions.get('WsenTmpM')
-            tL = self._water_heater._acOptions.get('WsenTmpL')
+            tH, tM, tL = _tank_temperature_raws(self._water_heater)
             set_tmp = self._water_heater._acOptions.get('WsetTmp')  # 设定温度（原始*10）
             if None in (tH, tM, tL, set_tmp):
                 return None

@@ -280,9 +280,23 @@ class GreeWaterHeater(WaterHeaterEntity):
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride = None):
         if not (optionValuesToOverride is None):
             _LOGGER.info('Setting acOptions with retrieved HVAC values')
-            for key in newOptionsToOverride:
-                _LOGGER.info('Setting %s: %s' % (key, optionValuesToOverride[newOptionsToOverride.index(key)]))
-                acOptions[key] = optionValuesToOverride[newOptionsToOverride.index(key)]
+            # 设备通常只返回它实际支持的字段，长度可能少于请求的字段数。
+            # 必须按实际返回长度安全配对，否则用固定下标取值会 IndexError，
+            # 导致整个 SyncState 中断、HA 实体状态永远不更新。
+            if isinstance(optionValuesToOverride, dict):
+                for key, value in optionValuesToOverride.items():
+                    if key in acOptions:
+                        _LOGGER.info('Setting %s: %s' % (key, value))
+                        acOptions[key] = value
+            else:
+                _LOGGER.info('Device returned %s values for %s requested fields',
+                             len(optionValuesToOverride), len(newOptionsToOverride))
+                for i, key in enumerate(newOptionsToOverride):
+                    if i >= len(optionValuesToOverride):
+                        _LOGGER.debug('Device did not return field %s (index %s); keeping previous value', key, i)
+                        continue
+                    _LOGGER.info('Setting %s: %s' % (key, optionValuesToOverride[i]))
+                    acOptions[key] = optionValuesToOverride[i]
             _LOGGER.info('Done setting acOptions')
         else:
             _LOGGER.info('Overwriting acOptions with new settings')
