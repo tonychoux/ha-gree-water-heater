@@ -10,5 +10,35 @@
         }
       }
     }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "配置格力热水器",
+        "data": {
+          "name": "名称",
+          "host": "设备 IP 地址",
+          "port": "端口",
+          "mac": "MAC 地址",
+          "timeout": "超时（秒）",
+          "encryption_version": "加密版本（1=ECB，2=GCM）"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "修改格力热水器配置",
+        "data": {
+          "name": "名称",
+          "host": "设备 IP 地址",
+          "port": "端口",
+          "mac": "MAC 地址",
+          "timeout": "超时（秒）",
+          "encryption_version": "加密版本（1=ECB，2=GCM）"
+        }
+      }
+    }
   }
 }

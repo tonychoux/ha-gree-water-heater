@@ -1,7 +1,7 @@
 DOMAIN = "greeWat"
 
 async def async_setup_entry(hass, entry):
-    # ±£Ö¤Êı¾İ½á¹¹Ò»¶¨´æÔÚ
+    # ä¿è¯æ•°æ®ç»“æ„ä¸€å®šå­˜åœ¨
     hass.data.setdefault("greeWat_entities", {})
     await hass.config_entries.async_forward_entry_setups(entry, ["water_heater", "sensor"])
     return True

@@ -35,7 +35,7 @@ class GreeWaterHotPercentSensor(SensorEntity):
         self._attr_unique_id = f"gree_{mac_str}_re_shui_qi_hot_percent"
         self._attr_name = "实际热水占比"
         self._attr_native_unit_of_measurement = "%"
-        self._attr_device_class = "humidity"  # 或 "percentage"
+        self._attr_device_class = "percentage"
         self._attr_state_class = "measurement"
 
     @property
@@ -80,7 +80,6 @@ class GreeWaterHotPercentSensor(SensorEntity):
     @property
     def device_info(self):
         return self._water_heater.device_info
-        return self._water_heater.device_info
         
     
     
@@ -94,7 +93,7 @@ class GreeWaterTargetHotPercentSensor(SensorEntity):
         self._attr_unique_id = f"gree_{mac_str}_re_shui_qi_target_hot_percent"
         self._attr_name = "目标热水占比"
         self._attr_native_unit_of_measurement = "%"
-        self._attr_device_class = "humidity"  # 或 "percentage"
+        self._attr_device_class = "percentage"
 
     @property
     def state(self):

@@ -4,11 +4,9 @@ import socket
 import base64
 
 import logging
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
-
+from functools import partial as ft
 from . import DOMAIN
-from homeassistant.components.water_heater import *
+from homeassistant.components.water_heater import WaterHeaterEntity, WaterHeaterEntityFeature
 from homeassistant.const import (
 	#Platform,
 	#TEMP_CELSIUS,
@@ -20,11 +18,6 @@ from homeassistant.const import (
 	# CONF_SWITCHES,
 	# STATE_ON,
 	STATE_OFF,
-	CONF_HOST,
-	CONF_MAC,
-	CONF_NAME,
-	CONF_PORT,
-	CONF_TIMEOUT,
 	ATTR_UNIT_OF_MEASUREMENT,
 )
 
@@ -35,7 +28,6 @@ try: import simplejson
 except ImportError: import json as simplejson
 from datetime import timedelta
 
-REQUIREMENTS = ['pycryptodome']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,22 +64,6 @@ TEMP_OFFSET  = 100
 GCM_IV = b'\x54\x40\x78\x44\x49\x67\x5A\x51\x6C\x5E\x63\x13'
 GCM_ADD = b'qualcomm-test'
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    vol.Required(CONF_HOST): cv.string,
-    vol.Required(CONF_PORT, default=DEFAULT_PORT): cv.positive_int,
-    vol.Required(CONF_MAC): cv.string,
-    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,  
-    vol.Optional(CONF_ENCRYPTION_KEY): cv.string,
-    vol.Optional(CONF_UID): cv.positive_int,
-    vol.Optional(CONF_MAX_ONLINE_ATTEMPTS, default=3): cv.positive_int,
-    vol.Optional(CONF_DISABLE_AVAILABLE_CHECK, default=False): cv.boolean,
-    vol.Optional(CONF_ENCRYPTION_VERSION, default=1): cv.positive_int,
-    vol.Optional(CONF_TARGET_TEMP): cv.entity_id,
-    vol.Optional(CONF_TEMP_SENSOR): cv.entity_id,
-    vol.Optional(CONF_TARGET_TEMP_STEP, default=DEFAULT_TARGET_TEMP_STEP): vol.Coerce(float),
-
-})
 
 def get_entry_value(entry, key, default=None):
     return entry.options.get(key, entry.data.get(key, default))
@@ -233,8 +209,11 @@ class GreeWaterHeater(WaterHeaterEntity):
             tag = receivedJson['tag']
             cipher.verify(base64.b64decode(tag))
         decodedPack = decryptedPack.decode("utf-8")
-        replacedPack = decodedPack.replace('\x0f', '').replace(decodedPack[decodedPack.rindex('}')+1:], '')
-        loadedJsonPack = simplejson.loads(replacedPack)  
+        end = decodedPack.rfind("}")
+        if end == -1:
+            raise ValueError(f"No valid JSON object in device response: {decodedPack!r}")
+        replacedPack = decodedPack[:end + 1].replace("\x0f", "")
+        loadedJsonPack = simplejson.loads(replacedPack)
         return loadedJsonPack
 
     def GetDeviceKey(self):
@@ -245,8 +224,8 @@ class GreeWaterHeater(WaterHeaterEntity):
         jsonPayloadToSend = '{"cid": "app","i": 1,"pack": "' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid": 0}'
         try:
             self._encryption_key = self.FetchResult(cipher, self._ip_addr, self._port, self._timeout, jsonPayloadToSend)['key'].encode("utf8")
-        except:
-            _LOGGER.info('Error getting device encryption key!')
+        except (OSError, ValueError) as err:
+            _LOGGER.warning("Error getting device encryption key: %s", err)
             self._device_online = False
             self._online_attempts = 0
             return False
@@ -276,8 +255,8 @@ class GreeWaterHeater(WaterHeaterEntity):
         jsonPayloadToSend = '{"cid": "app","i": 1,"pack": "' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid": 0, "tag" : "' + tag + '"}'
         try:
             self._encryption_key = self.FetchResult(self.GetGCMCipher(GENERIC_GREE_DEVICE_KEY), self._ip_addr, self._port, self._timeout, jsonPayloadToSend)['key'].encode("utf8")
-        except:
-            _LOGGER.info('Error getting device encryption key!')
+        except (OSError, ValueError) as err:
+            _LOGGER.warning("Error getting device encryption key: %s", err)
             self._device_online = False
             self._online_attempts = 0
             return False
@@ -341,7 +320,7 @@ class GreeWaterHeater(WaterHeaterEntity):
                 _LOGGER.info('5')
                 attr = target_temp_state.attributes
                 _LOGGER.info(attr)
-                if self._target_temperature in range(MIN_TEMP, MAX_TEMP+1):
+                if MIN_TEMP <= self._target_temperature <= MAX_TEMP:
                     self.hass.states.async_set(self._target_temp_entity_id, float(self._target_temperature), attr)
         _LOGGER.info('HA target temp set according to HVAC state to: ' + str(self._acOptions['WsetTmp']))
 
@@ -352,7 +331,12 @@ class GreeWaterHeater(WaterHeaterEntity):
         if (self._acOptions['Pow'] == 0):
             self._hvac_mode = STATE_OFF
         else:
-            self._hvac_mode = self._hvac_modes[self._acOptions['Wmod']]
+            wmod = self._acOptions['Wmod']
+            if wmod is not None and 0 <= wmod < len(self._hvac_modes):
+                self._hvac_mode = self._hvac_modes[wmod]
+            else:
+                _LOGGER.warning("Unexpected Wmod value %s, defaulting mode to off", wmod)
+                self._hvac_mode = STATE_OFF
         _LOGGER.info('HA operation mode set according to HVAC state to: ' + str(self._hvac_mode))
 
     def UpdateHACurrentTemperature(self):
@@ -376,8 +360,8 @@ class GreeWaterHeater(WaterHeaterEntity):
                 _LOGGER.info('Attempt to check whether device has an built-in temperature sensor')
                 try:
                     temp_sensor = self.GreeGetValues(["WatTmp"])
-                except:
-                    _LOGGER.info('Could not determine whether device has an built-in temperature sensor. Retrying at next update()')
+                except (OSError, ValueError) as err:
+                    _LOGGER.info("Could not determine built-in temp sensor (retry next update): %s", err)
                 else:
                     if temp_sensor:
                         self._has_temp_sensor = True
@@ -393,8 +377,8 @@ class GreeWaterHeater(WaterHeaterEntity):
 
         try:
             currentValues = self.GreeGetValues(optionsToFetch)
-        except:
-            _LOGGER.info('Could not connect with device. ')
+        except (OSError, ValueError) as err:
+            _LOGGER.warning("Could not connect with device: %s", err)
             if not self._disable_available_check:
                 self._online_attempts +=1
                 if (self._online_attempts == self._max_online_attempts):
@@ -441,7 +425,7 @@ class GreeWaterHeater(WaterHeaterEntity):
         if new_state is None:
             return
         self._async_update_current_temp(new_state)
-        return self.schedule_update_ha_state(True)
+        self.async_write_ha_state()
 
     @callback
     def _async_update_current_temp(self, state):
@@ -465,7 +449,7 @@ class GreeWaterHeater(WaterHeaterEntity):
         except ValueError:
             return False     
 
-    def _async_target_temp_entity_state_changed(self, event: Event[EventStateChangedData]) -> None:
+    async def _async_target_temp_entity_state_changed(self, event: Event[EventStateChangedData]) -> None:
         entity_id = event.data["entity_id"]
         old_state = event.data["old_state"]
         new_state = event.data["new_state"]
@@ -479,7 +463,7 @@ class GreeWaterHeater(WaterHeaterEntity):
             # do nothing if state change is triggered due to Sync with HVAC
             return
         self._async_update_current_target_temp(new_state)
-        return self.schedule_update_ha_state(True)
+        self.async_write_ha_state()
 
     @callback
     def _async_update_current_target_temp(self, state):
@@ -512,7 +496,7 @@ class GreeWaterHeater(WaterHeaterEntity):
                 _LOGGER.info('available(): Device is offline')
                 return False
 
-    def update(self):
+    def update(self) -> None:
         _LOGGER.info('update()')
         if not self._encryption_key:
             if self.encryption_version == 1:
@@ -522,7 +506,7 @@ class GreeWaterHeater(WaterHeaterEntity):
                 if self.GetDeviceKeyGCM():
                     self.SyncState()
             else:
-                _LOGGER.error('Encryption version %s is not implemented.' % encryption_version)
+                _LOGGER.error('Encryption version %s is not implemented.' % self.encryption_version)
         else:
             self.SyncState()
 
@@ -625,7 +609,7 @@ class GreeWaterHeater(WaterHeaterEntity):
         minutes = minutes % 60
         return f"{hours:02d}:{minutes:02d}"
 
-    def set_temperature(self, **kwargs):
+    def set_temperature(self, **kwargs) -> None:
         _LOGGER.info('set_temperature(): ' + str(kwargs.get(ATTR_TEMPERATURE)))
         # Set new target temperatures.
         if kwargs.get(ATTR_TEMPERATURE) is not None:
@@ -636,7 +620,7 @@ class GreeWaterHeater(WaterHeaterEntity):
                 self.SyncState({ 'WsetTmp': int(kwargs.get(ATTR_TEMPERATURE))*10})
                 self.schedule_update_ha_state()
 
-    def set_operation_mode(self, hvac_mode):
+    def set_operation_mode(self, hvac_mode) -> None:
         _LOGGER.info('set_hvac_mode(): ' + str(hvac_mode))
         # Set new operation mode.
         c = {}
@@ -652,7 +636,7 @@ class GreeWaterHeater(WaterHeaterEntity):
     def operation_list(self):
         return self._hvac_modes
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         _LOGGER.info('turn_on(): ')
         # Turn on.
         c = {'Pow': 1}
@@ -660,7 +644,7 @@ class GreeWaterHeater(WaterHeaterEntity):
         self.SyncState(c)
         self.schedule_update_ha_state()
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         _LOGGER.info('turn_off(): ')
         # Turn off.
         c = {'Pow': 0}
