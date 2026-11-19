@@ -10,5 +10,5 @@
   "dependencies": [],
   "documentation": "https://github.com/tonychoux/ha-gree-water-heater#readme",
   "issue_tracker": "https://github.com/tonychoux/ha-gree-water-heater/issues",
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2025.6.0"
 }
