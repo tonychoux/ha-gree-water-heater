@@ -2,10 +2,9 @@
 
 字段映射来自用户机型（格力+ App GR_Code）实际回报的字段：
 - 可用热水量  <- Watpercent（原始值 -100，如 200 -> 100%）
-- 运行状态    <- Wstate（0=保温中, 1=正在加热）
-- 整机故障    <- AllErr（0=正常, 非0=故障码）
 
 所有值读取自主实体的 _acOptions 字典（由设备响应自带的 cols/dat 配对得到）。
+运行状态（Wstate）与整机故障（AllErr）为二值状态，已移至 binary_sensor 平台。
 """
 
 import asyncio
@@ -54,36 +53,6 @@ class GreeHotWaterAmountSensor(_GreeBaseSensor):
         return value - 100
 
 
-class GreeRunningStateSensor(_GreeBaseSensor):
-    """当前运行状态（Wstate: 0=保温中, 1=正在加热）。"""
-
-    _STATES = {0: "保温中", 1: "正在加热"}
-
-    def __init__(self, water_heater):
-        super().__init__(water_heater, "Wstate", "运行状态")
-
-    @property
-    def native_value(self):
-        value = self._water_heater._acOptions.get("Wstate")
-        if value is None:
-            return None
-        return self._STATES.get(value, f"未知({value})")
-
-
-class GreeFaultSensor(_GreeBaseSensor):
-    """整机综合故障码（AllErr: 0=正常）。"""
-
-    def __init__(self, water_heater):
-        super().__init__(water_heater, "AllErr", "整机故障")
-
-    @property
-    def native_value(self):
-        value = self._water_heater._acOptions.get("AllErr")
-        if value is None:
-            return None
-        return "正常" if value == 0 else f"故障({value})"
-
-
 async def async_setup_entry(hass, entry, async_add_entities):
     # 主实体可能还在首次同步中，最多等 2 秒。
     for _ in range(10):
@@ -99,14 +68,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         )
         return
 
-    async_add_entities(
-        [
-            GreeHotWaterAmountSensor(water_heater),
-            GreeRunningStateSensor(water_heater),
-            GreeFaultSensor(water_heater),
-        ],
-        True,
-    )
+    async_add_entities([GreeHotWaterAmountSensor(water_heater)], True)
 
 
 async def async_unload_entry(hass, entry):
